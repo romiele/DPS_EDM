@@ -25,7 +25,7 @@ class DPS_Inversion():
     def __init__(self, args):
         
         #load network
-        with open(args.workdir+args.net_folder+args.net_snapfile, 'rb') as f:
+        with open(args.net_dir+args.net_snapfile, 'rb') as f:
             self.net = pickle.load(f)['ema'].to(args.device)
             
         self.sigma_max = args.sigma_max
@@ -35,15 +35,15 @@ class DPS_Inversion():
         self.rho = args.rho
         self.n_samples = args.n_samples
         self.workdir = args.workdir
-        self.inv_folder = args.inv_folder
+        # self.inv_folder = args.inv_folder
         self.num_steps = args.num_steps
         self.save_dir = args.save_dir #args.save_folder
         self.device = args.device
         
         #loading test data---------------------------------------------------------------
-        self.true_Ip= torch.load(args.workdir+args.inv_folder+args.test_model_folder+f'/mtest_ip{args.test_model_n}.pt', 
+        self.true_Ip= torch.load(args.test_models_dir+f'/mtest_ip{args.test_model_n}.pt', 
                                  weights_only=True, map_location=self.device)[None,None,:].double()
-        self.true_F= torch.load(args.workdir+args.inv_folder+args.test_model_folder+f'/mtest_facies{args.test_model_n}.pt', 
+        self.true_F= torch.load(args.test_models_dir+f'/mtest_facies{args.test_model_n}.pt', 
                                  weights_only=True, map_location=self.device)[None,None,:].double()
         self.ip= [self.true_Ip.min(),self.true_Ip.max(), self.true_Ip.max()-self.true_Ip.min()]
         
@@ -494,8 +494,8 @@ class DPS_Inversion():
                                  self.image_size[0],
                                  self.image_size[1])
         
-        rmse_h_s = torch.zeros(self.n_samples,self.num_steps)
-        rmse_h_t = torch.zeros(self.n_samples,self.num_steps)
+        rmse_s = torch.zeros(self.n_samples,self.num_steps)
+        rmse_h = torch.zeros(self.n_samples,self.num_steps)
         latent = torch.randn((self.n_samples,self.image_depth,
                               self.image_size[0],
                               self.image_size[1]))
@@ -509,37 +509,37 @@ class DPS_Inversion():
                     print('Ecolo')
                     break
                 if (self.seismic and not self.hard_data) : 
-                    realizations_t, rmse_h_s_t = self.edm_sampler(latent_t.to(self.device))
-                    rmse_h_s[i*N_max:i*N_max+N_max]=rmse_h_s_t
+                    realizations_t, rmse_s_t = self.edm_sampler(latent_t.to(self.device))
+                    rmse_s[i*N_max:i*N_max+N_max]=rmse_s_t
                     
                 elif (not self.seismic and self.hard_data) : 
-                    realizations_t, rmse_h_t_t = self.edm_sampler(latent_t.to(self.device))
-                    rmse_h_t[i*N_max:i*N_max+N_max]=rmse_h_t_t
+                    realizations_t, rmse_h_t = self.edm_sampler(latent_t.to(self.device))
+                    rmse_h[i*N_max:i*N_max+N_max] = rmse_h_t
                 
                 elif (self.seismic and self.hard_data): 
-                    realizations_t, rmse_h_s_t, rmse_h_t_t = self.edm_sampler(latent_t.to(self.device))
-                    rmse_h_s[i*N_max:i*N_max+N_max]=rmse_h_s_t
-                    rmse_h_t[i*N_max:i*N_max+N_max]=rmse_h_t_t
+                    realizations_t, rmse_s_t, rmse_h_t = self.edm_sampler(latent_t.to(self.device))
+                    rmse_s[i*N_max:i*N_max+N_max]=rmse_s_t
+                    rmse_h[i*N_max:i*N_max+N_max]=rmse_h_t
                     
                 realizations[i*N_max:i*N_max+N_max]=realizations_t.detach().cpu()
             
         else:
             
-            if (self.seismic and not self.hard_data) : realizations, rmse_h_s = self.edm_sampler(latent.to(self.device))
-            elif (not self.seismic and self.hard_data) : realizations, rmse_h_t = self.edm_sampler(latent.to(self.device))
-            elif (self.seismic and self.hard_data): realizations, rmse_h_s, rmse_h_t = self.edm_sampler(latent.to(self.device))
+            if (self.seismic and not self.hard_data) : realizations, rmse_s = self.edm_sampler(latent.to(self.device))
+            elif (not self.seismic and self.hard_data) : realizations, rmse_h = self.edm_sampler(latent.to(self.device))
+            elif (self.seismic and self.hard_data): realizations, rmse_s, rmse_h = self.edm_sampler(latent.to(self.device))
         
         realizations = (realizations+1)/2
         realizations[:,1] = (realizations[:,1])*(self.ip[1].item()-self.ip[0].item())+self.ip[0].item()
         realizations = realizations.detach().cpu().squeeze()
 
         self.realizations = realizations
-        self.rmse_h_s= rmse_h_s
-        self.rmse_h_t= rmse_h_t
+        self.rmse_s= rmse_s
+        self.rmse_h= rmse_h
         
         torch.save(self.realizations, self.save_dir+'/reals.pt')
-        torch.save(self.rmse_h_s, self.save_dir+'/rmse_h_s.pt')
-        torch.save(self.rmse_h_t, self.save_dir+'/rmse_h_t.pt')
+        torch.save(self.rmse_s, self.save_dir+'/rmse_s.pt')
+        torch.save(self.rmse_h, self.save_dir+'/rmse_h.pt')
 
         
     def results_analysis(self):
@@ -569,12 +569,12 @@ class DPS_Inversion():
             
             #plot rmse ------------------------------------------------------------------------------
             plt.figure()
-            plt.plot(self.rmse_h_s.T, color='k')
-            plt.plot(self.rmse_h_s.T[:,0],label='Samples', color='k')
+            plt.plot(self.rmse_s.T, color='k')
+            plt.plot(self.rmse_s.T[:,0],label='Samples', color='k')
             plt.plot(np.arange(0,self.num_steps), 
                      np.zeros(self.num_steps)+sigma_ys.mean().item(),
                      linestyle='--', color='r', label=r'$\sigma_ys$')
-            plt.ylim([0,self.rmse_h_s.max()+0.1])
+            plt.ylim([0,self.rmse_s.max()+0.1])
             plt.ylabel(r'RMSE')
             plt.xlabel('Steps')
             plt.legend()
@@ -608,12 +608,12 @@ class DPS_Inversion():
         if self.hard_data :
             #plot rmse -----------------------------------------------------------------------------------------
             plt.figure()
-            plt.plot(self.rmse_h_t.T, color='k')
-            plt.plot(self.rmse_h_t.T[:,0],label='Samples', color='k')
+            plt.plot(self.rmse_h.T, color='k')
+            plt.plot(self.rmse_h.T[:,0],label='Samples', color='k')
             plt.plot(np.arange(0,self.num_steps), 
                      np.zeros(self.num_steps)+sigma_yh[1].mean().item(),
                      linestyle='--', color='r', label=r'$\sigma_ys$')
-            plt.ylim([0,self.rmse_h_t.max()+0.1])
+            plt.ylim([0,self.rmse_h.max()+0.1])
             plt.ylabel(r'RMSE')
             plt.xlabel('Steps')
             plt.legend()
@@ -741,13 +741,12 @@ class DPS_Inversion():
         
         return None
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--workdir", type=str, default= 'C:/Users/rmiele/Work/Inversion/DPS_EDM/')
-parser.add_argument("--save_dir", type=str, default= 'C:/Users/romie/OneDrive - Université de Lausanne/')
-parser.add_argument("--train_data_dir", type=str, default= 'C:/Users/romie/OneDrive - Université de Lausanne/Codes/Training_Data/Synthetic_channels/')
-parser.add_argument("--inv_folder", type=str, default= '/Inversion/')
-parser.add_argument("--net_folder", type=str, default= 'edm/')
+parser.add_argument("--save_dir", type=str, default= 'C:/Users/rmiele/OneDrive - Université de Lausanne/Codes/Inversion/DPS_EDM/Save/')
+parser.add_argument("--train_data_dir", type=str, default= 'C:/Users/rmiele/OneDrive - Université de Lausanne/Codes/Training_Data/Synthetic_channels/')
+parser.add_argument("--test_models_dir", type=str, default= 'C:/Users/rmiele/OneDrive - Université de Lausanne/Codes/Inversion/Test_models/')
+parser.add_argument("--net_dir", type=str, default= 'C:/Users/rmiele/OneDrive - Université de Lausanne/Codes/Modeling/EDM_Karras/')
 parser.add_argument("--net_snapfile", type=str, default= '/save/last/network-snapshot-001800.pkl') 
 
 parser.add_argument("--test_model_n", type=str, default='1')
@@ -756,11 +755,11 @@ parser.add_argument("--wavelet_file", type=str, default= 'wavelet.asc')
 parser.add_argument("--image_size", type= int, default=[80,100])
 parser.add_argument("--image_depth", type= int, default=2)
 parser.add_argument("--sigma_max", type= int, default=80)
-parser.add_argument("--rho", type= float, default=7, 
+parser.add_argument("--rho", type= float, default=8, 
                     help='determines the noise schedule, 1 is linear. 7 is the optimal exponential trend from Karras EDM paper')  
 parser.add_argument("--device", type= str, default="cuda:0")       
 
-parser.add_argument("--num_steps", type= int, default= 100)
+parser.add_argument("--num_steps", type= int, default= 300)
 parser.add_argument("--n_samples", type= int, default= 30)
 
 parser.add_argument("--hard_data_error", type=float, default= [.05,.05])
@@ -768,14 +767,15 @@ parser.add_argument("--relative_data_error", type=float, default= .05)
 parser.add_argument("--absolute_data_error", type=float, default= 1)
 parser.add_argument("--error_x0", type=str, default= 'actual_dps', help= 'dps / prop / actual_dps: 1) the way it is theoretically proposed / our correction / how it is implemented in their DDPM implementation')
 
-parser.add_argument("--seismic", type=bool, default=False)
-parser.add_argument("--hard_data", type=bool, default=True)
+parser.add_argument("--seismic", type=bool, default=True)
+parser.add_argument("--hard_data", type=bool, default=False)
 args = parser.parse_args()
 
 
-sys.path.append(args.workdir+args.net_folder)
+sys.path.append(args.net_dir+'/Code_backup') #torch.utils is necessary to load the model
 import os
 from dataset import FaciesSet
+
 
 # using training data to compute the error
 if args.error_x0:
@@ -789,7 +789,8 @@ if args.error_x0:
 #error yes, error no
 #seismic or HD or both
 text = 'Both' if (args.seismic and args.hard_data) else ('Seismic' if args.seismic else 'HD')
-args.save_dir = args.workdir+args.inv_folder+f'/DPS_EDM/{text}_ErrorX0_{args.error_x0}'
+args.save_dir = args.save_dir+f'/{text}_{args.error_x0}'
+
 os.makedirs(args.save_dir, exist_ok=True)
 
 DPS = DPS_Inversion(args)
