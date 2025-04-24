@@ -821,11 +821,11 @@ for n_steps in [500]:
       else:
         torch.cuda.empty_cache()
         parser = argparse.ArgumentParser()
-        parser.add_argument("--workdir", type=str, default= '/work/rmiele/inversion_edm/',  help = 'C:/Users/romie/Work/Inversion/DPS_EDM/')
-        parser.add_argument("--save_dir", type=str, default= '/work/rmiele/inversion_edm//')
-        parser.add_argument("--train_data_dir", type=str, default= '/work/rmiele//Training_Data/')
-        parser.add_argument("--test_models_dir", type=str, default= '/work/rmiele/inversion_edm/')
-        parser.add_argument("--net_dir", type=str, default= '/work/rmiele/inversion_edm/')
+        parser.add_argument("--workdir", type=str, default= '//')
+        parser.add_argument("--save_dir", type=str, default= '//')
+        parser.add_argument("--train_data_dir", type=str, default= '/')
+        parser.add_argument("--test_models_dir", type=str, default= '/')
+        parser.add_argument("--net_dir", type=str, default= '/')
         parser.add_argument("--net_snapfile", type=str, default= '/network-snapshot-001800.pkl') 
         
         parser.add_argument("--test_model_n", type=str, default='1')
@@ -868,10 +868,6 @@ for n_steps in [500]:
                 del data
                 break
         
-        #error yes, error no
-        #seismic or HD or both
-        text = 'Both' if (args.seismic and args.hard_data) else ('Seismic' if args.seismic else 'HD')
-        args.save_dir = args.save_dir+f'/{text}_{args.error_x0}_2wells_nsteps{args.num_steps}_error{args.hard_data_error}'
         
         os.makedirs(args.save_dir, exist_ok=True)
         
