@@ -742,12 +742,12 @@ class DPS_Inversion():
         return None
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--workdir", type=str, default= 'C:/Users/rmiele/Work/Inversion/DPS_EDM/')
-parser.add_argument("--save_dir", type=str, default= 'C:/Users/rmiele/OneDrive - Université de Lausanne/Codes/Inversion/DPS_EDM/Save/')
-parser.add_argument("--train_data_dir", type=str, default= 'C:/Users/rmiele/OneDrive - Université de Lausanne/Codes/Training_Data/Synthetic_channels/')
-parser.add_argument("--test_models_dir", type=str, default= 'C:/Users/rmiele/OneDrive - Université de Lausanne/Codes/Inversion/Test_models/')
-parser.add_argument("--net_dir", type=str, default= 'C:/Users/rmiele/OneDrive - Université de Lausanne/Codes/Modeling/EDM_Karras/')
-parser.add_argument("--net_snapfile", type=str, default= '/save/last/network-snapshot-001800.pkl') 
+parser.add_argument("--workdir", type=str, default= '/')
+parser.add_argument("--save_dir", type=str, default= '/')
+parser.add_argument("--train_data_dir", type=str, default= '/')
+parser.add_argument("--test_models_dir", type=str, default= '/')
+parser.add_argument("--net_dir", type=str, default= '/')
+parser.add_argument("--net_snapfile", type=str, default= '/') 
 
 parser.add_argument("--test_model_n", type=str, default='1')
 parser.add_argument("--test_model_folder", type=str, default= 'Test_models_DGMs/')
