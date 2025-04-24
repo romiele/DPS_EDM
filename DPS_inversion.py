@@ -545,345 +545,71 @@ class DPS_Inversion():
         torch.save(self.realizations, self.save_dir+'/reals.pt')
         torch.save(self.wrmse_s, self.save_dir+'/wrmse_s.pt')
         torch.save(self.wrmse_h, self.save_dir+'/wrmse_h.pt')
-        
-    def results_analysis(self):
-        #RESULTS ANALYSIS (a bit memory demanding)
-        def add_cbar(i,j=False, ax=False, fig= None, axs=None):
-            if j: bbox= axs[i,j].get_position()
-            else: bbox= axs[i].get_position()
-            cax = fig.add_axes((bbox.x1+0.01, bbox.y0, 0.02, bbox.y1-bbox.y0))        
-            fig.colorbar(ax, cax=cax, orientation='vertical')
-        
-        def plot_wrmse(array, label):
-            plt.figure()
-            plt.plot(array.T, color='k')
-            plt.plot(array.T[:,0],label='Samples', color='k')
-            plt.plot(np.arange(0,self.num_steps), 
-                     np.ones(self.num_steps),
-                     linestyle='--', color='r', label='noise level')
-            plt.ylim([0,array.max()+0.1])
-            plt.ylabel(r'WRMSE')
-            plt.xlabel('Steps')
-            plt.legend()
-            plt.savefig(self.save_dir+f'//rmse_s_{label}.png',bbox_inches='tight')
-            plt.show()
 
-        if (self.seismic and not self.hard_data):             text='seismic only'
-        if (not self.seismic and self.hard_data):             text='hd only'
-        if (self.seismic and self.hard_data):                 text='both'
-        N = self.N.detach().cpu()
-        
-        if self.realizations.shape[-1]==104:
-            self.realizations = self.realizations[...,:100]
+parser = argparse.ArgumentParser()
+parser.add_argument("--workdir", type=str, default= '//')
+parser.add_argument("--save_dir", type=str, default= '//')
+parser.add_argument("--train_data_dir", type=str, default= '/')
+parser.add_argument("--test_models_dir", type=str, default= '/')
+parser.add_argument("--net_dir", type=str, default= '/')
+parser.add_argument("--net_snapfile", type=str, default= '/network-snapshot-001800.pkl') 
 
-        n=self.n_samples if self.n_samples<3 else 3
-        fig, axs = plt.subplots(2,n, sharex=True,sharey=True, figsize=(8,4))
-        fig.suptitle('Realizations')
-        if n==1:
-            ax1 = axs[0].imshow(self.realizations[0], cmap='gray')
-            ax2 = axs[1].imshow(self.realizations[1], cmap='jet')
-        else:
-            for i in range(n):
-                ax1 = axs[0,i].imshow(self.realizations[i,0], cmap='gray')
-                ax2 = axs[1,i].imshow(self.realizations[i,1], cmap='jet')
-        add_cbar(i=0,j=-1,ax=ax1,fig=fig, axs=axs)
-        add_cbar(i=1,j=-1,ax=ax2,fig=fig, axs=axs)
-        plt.savefig(self.save_dir+f'//realizations_{text}.png',bbox_inches='tight')
+parser.add_argument("--test_model_n", type=str, default='1')
+parser.add_argument("--test_model_folder", type=str, default= 'Test_models_DGMs/')
+parser.add_argument("--wavelet_file", type=str, default= 'wavelet.asc')
+parser.add_argument("--image_size", type= int, default=[80,100])
+parser.add_argument("--image_depth", type= int, default=2)
+parser.add_argument("--sigma_max", type= int, default=80)
+parser.add_argument("--rho", type= float, default=7,    
+                    help='determines the noise schedule, 1 is linear. 7 is the optimal exponential trend from Karras EDM paper')  
+parser.add_argument("--device", type= str, default="cuda:3")       
 
-        if self.seismic :
-            ys_obs = (self.ys_obs- self.noise_ys).detach().cpu().squeeze()
-            sigma_ys = self.sigma_ys.detach().cpu().squeeze()
-            if ys_obs.shape[-1]==104:
-                ys_obs=ys_obs[...,:100]
-                sigma_ys=sigma_ys[...,:100]
-            
-            yh_obs = torch.cat((self.true_F, self.true_Ip), dim=1).detach().cpu().squeeze()
-            
-            plot_wrmse(self.wrmse_s,text)
-            
-            #plot seismic data error ------------------------------------------------------------------------------
-            fig, axs= plt.subplots(1,3, figsize=(5,4))
-            ax= axs[0].imshow(ys_obs,cmap='seismic')
-            axs[0].set_title('True')
-            
-            noisystuff = self.realizations[:,1,None,:].double()
-            dhat = self.physics_forward(noisystuff.to(self.device)).detach().cpu().squeeze()
-            e_hat = (ys_obs - dhat).mean(0)
-            e = (ys_obs - dhat)
-            ax = axs[1].imshow(e_hat,cmap='seismic')
-            axs[1].set_title(f'Avg Residuals\n{self.n_samples} samples')
-            add_cbar(i=1,ax=ax,fig=fig, axs=axs)
-            
-            axs[2].hist(e.flatten(), density=True, 
-                        weights= np.ones(len(e.flatten()))/len(e.flatten()),
-                        bins=np.linspace(ys_obs.min().item(),ys_obs.max().item(),30))
-    
-            axs[2].set_title('Error distribution') # \n Std. dev. {(e.flatten().std()/8000).round(decimals=3).item()}')
-            bbox= axs[2].get_position()
-            bbox.x0+=0.2; bbox.x1+=0.2; bbox.y0+=0.2; bbox.y1-=0.2
-            axs[2].set_position(bbox)
-            plt.savefig(self.save_dir+f'//Seismic_summary_{text}.png',bbox_inches='tight')
-            plt.show()           
-        
-        if self.hard_data :
-            sigma_yh = self.sigma_yh.detach().cpu().squeeze()*self.ip[2].detach().cpu()
-            yh_obs = (self.yh_obs - self.noise_yh).detach().cpu().squeeze() #remove noise
-            yh_obs[1] = yh_obs[1]*(self.ip[1].item()-self.ip[0].item())+self.ip[0].item() #rescale to real support
-            
-            if yh_obs.shape[-1]==104:
-                yh_obs=yh_obs[...,:100]
-                sigma_yh=sigma_yh[...,:100]
+parser.add_argument("--num_steps", type= int, default= n_steps)
+parser.add_argument("--n_samples", type= int, default= 100)
 
-            plot_wrmse(self.wrmse_h,text)
-        
-            fig, axs = plt.subplots(1,len(args.hd_cond_where)*self.image_depth,
-                                    figsize=(len(args.hd_cond_where)*2*3,4), sharey=True)
-            if not self.hard_data: fig.suptitle('Not conditioning data')
-            else: fig.suptitle('Conditioning data')
-            axs[0].set_title('Facies Realizations')
-            axs[1].set_title('Ip')
-            k=0
-            ylenght = np.linspace(self.image_size[0],0,self.image_size[0])
-            
-            for i in range(self.image_depth):
-                for j in range(len(args.hd_cond_where)):
-                    
-                    if i == 0: 
-                        axs[k].imshow(np.flip(self.realizations[...,i,:,args.hd_cond_where[j]].T.numpy()),
-                                      aspect=0.1)
-                        axs[k].set_xticks(np.arange(-.5, self.n_samples, 1), minor=True)
-                        axs[k].grid(which='minor', color='w', linestyle='-', linewidth=1)
-    
-                    else:
-                        axs[k].plot(yh_obs[i,:,50],
-                                    ylenght, c='darkred', 
-                                    zorder=2, linestyle ='--',
-                                    label=r'$\bf {d_{obs}}$')
-                        
-                        axs[k].plot(yh_obs[i,:,args.hd_cond_where[j]]-sigma_yh[i,:,args.hd_cond_where[j]],
-                                    ylenght, c='b',zorder=2, alpha=0.7, linestyle ='--')
-                        axs[k].plot(yh_obs[i,:,args.hd_cond_where[j]]+sigma_yh[i,:,args.hd_cond_where[j]],
-                                    ylenght, c='b', zorder=2, alpha=0.7, linestyle ='--',
-                                    label=r'$\bf {d_{obs}}$'+r'$± \sigma_y$')
-                        
-                        axs[k].plot(self.realizations[:-1,i,:,50].T, 
-                                 np.tile(ylenght, (self.realizations.shape[0]-1,1)).T, 
-                                 c='darkgray', zorder=1)
-                        axs[k].plot(self.realizations[-1,i,:,50], 
-                                    ylenght, c='darkgray', zorder=1, 
-                                    label='Realizations')
-                        
-                        fig.legend(bbox_to_anchor=[.8,0,0,0])
-                k+=1
-            axs[0].set_ylim([-1,80.5])
-            plt.savefig(self.save_dir+f'//well_conditioning_Well_{text}.png',bbox_inches='tight')
-            plt.show()
-        
-#        else:
-#        here I should plot seismic trace vs sigma
-#            fig, axs = plt.subplots(1,len(args.hd_cond_where)*self.image_depth,
-#                                    figsize=(len(args.hd_cond_where)*2*3,4), sharey=True)
-#            if not self.hard_data: fig.suptitle('Not conditioning data')
-#            else: fig.suptitle('Conditioning data')
-#            axs[0].set_title('Facies Realizations')
-#            axs[1].set_title('Ip')
-#            k=0
-#            ylenght = np.linspace(self.image_size[0],0,self.image_size[0])
-#            
-#            for i in range(self.image_depth):
-#                for j in range(len(args.hd_cond_where)):
-#                    if i == 0: 
-#                        axs[k].imshow(np.flip(self.realizations[...,i,:,args.hd_cond_where[j]].T.numpy()),
-#                                      aspect=0.1)
-#                        axs[k].set_xticks(np.arange(-.5, self.n_samples, 1), minor=True)
-#                        axs[k].grid(which='minor', color='w', linestyle='-', linewidth=1)
-#    
-#                    else:
-#                        axs[k].plot(ys_obs[i,:,50],
-#                                    ylenght, c='darkred', 
-#                                    zorder=2, linestyle ='--',
-#                                    label=r'$\bf {d_{obs}}$')
-#                        
-#                        axs[k].plot(ys_obs[i,:,args.hd_cond_where[j]]-sigma_ys[i,:,args.hd_cond_where[j]],
-#                                    ylenght, c='b',zorder=2, alpha=0.7, linestyle ='--')
-#                        axs[k].plot(ys_obs[i,:,args.hd_cond_where[j]]+sigma_ys[i,:,args.hd_cond_where[j]],
-#                                    ylenght, c='b', zorder=2, alpha=0.7, linestyle ='--',
-#                                    label=r'$\bf {d_{obs}}$'+r'$± \sigma_y$')
-#                        
-#                        axs[k].plot(self.realizations[:-1,i,:,50].T, 
-#                                 np.tile(ylenght, (self.realizations.shape[0]-1,1)).T, 
-#                                 c='darkgray', zorder=1)
-#                        axs[k].plot(self.realizations[-1,i,:,50], 
-#                                    ylenght, c='darkgray', zorder=1, 
-#                                    label='Realizations')
-#                        
-#                        fig.legend(bbox_to_anchor=[.8,0,0,0])
-#                k+=1
-#            axs[0].set_ylim([-1,80.5])
-#            plt.savefig(self.save_dir+f'//well_conditioning_Well_{text}.png',bbox_inches='tight')
-#            plt.show()
-            
-        # Plot facies and ip ------------------------------------------------------------------------------------
-        import matplotlib
-        yh_obs_0 = np.ma.array (yh_obs[0], mask=yh_obs[0]<-1.5)
-        yh_obs_1 = np.ma.array (yh_obs[1], mask=yh_obs[1]<-1.5)
-        cmap0 = matplotlib.cm.gray
-        cmap0.set_bad('gray',1.)
+parser.add_argument("--hard_data_error", default= [.1*noise_factor,.05*noise_factor], help='Sigma for [Facies, Ip], normalized between 0 and 1')
+parser.add_argument("--hd_cond_where", default= [30, 50])
+parser.add_argument("--relative_data_error", default= .05*noise_factor)
+parser.add_argument("--absolute_data_error", default= 1*noise_factor)
+parser.add_argument("--error_x0", default= error, 
+help= 'dps / prop / actual_dps: 1) the way it is theoretically proposed / our correction / how it is implemented in their DDPM implementation')
 
-        cmap1 = matplotlib.cm.jet
-        cmap1.set_bad('gray',1.)
+parser.add_argument("--seismic", type=bool, default=True, help='True if conditioning on sesimic')
+parser.add_argument("--hard_data", type=bool, default=False, help='True if conditioning on well data')
 
-        n_raws = 3 if (self.hard_data) and (self.seismic) else 2
-    
-        fig, axs= plt.subplots(n_raws, 4, figsize = (18,n_raws*4), sharex=True, sharey=True)
-        axs[0,0].set_title('True')
-        axs[0,0].set_ylabel('Facies')
-        ax = axs[0,0].imshow(self.true_F.detach().cpu().squeeze(),cmap='gray')
-        axs[1,0].imshow(self.true_Ip.detach().cpu().squeeze(),cmap='jet',vmin = self.ip[0], vmax = self.ip[1])
-        axs[1,0].set_ylabel('Ip')
-        axs[0,1].set_title('Observed')
-        
-        axs[0,2].set_title(f'Inferred (mean)\n{self.n_samples} samples')
-        ax = axs[0,2].imshow(self.realizations[:,0].mean(0),cmap='gray',vmin=0,vmax=1, interpolation='none')
-        add_cbar(0,2,ax,fig=fig, axs=axs)
-        ax1 = axs[1,2].imshow(self.realizations[:,1].mean(0),cmap='jet', vmin = self.ip[0], vmax = self.ip[1], interpolation='none')
-        
-        axs[0,3].set_title(f'Inferred (Std. dev.)\n{self.n_samples} samples')
-        ax = axs[0,3].imshow(self.realizations[:,0].std(0),cmap='gray', interpolation='none')
-        bbox= axs[0,3].get_position()
-        bbox.x0+=0.07; bbox.x1+=0.07
-        axs[0,3].set_position(bbox)
-        add_cbar(0,3,ax,fig=fig, axs=axs)
-        
-        ax = axs[1,3].imshow(self.realizations[:,1].std(0),cmap='jet', interpolation='none')
-        bbox= axs[1,3].get_position()
-        bbox.x0+=0.07; bbox.x1+=0.07
-        axs[1,3].set_position(bbox)
-        add_cbar(1,3,ax,fig=fig, axs=axs)
+args = parser.parse_args()
 
-        if self.hard_data:
-            axs[0,1].imshow(yh_obs_0, cmap=cmap0,vmin=0,vmax=1, interpolation='none')#, vmin = 0, vmax =1)
-            axs[1,1].imshow(yh_obs_1,cmap=cmap1, vmin = self.ip[0], vmax = self.ip[1],interpolation='none')
+print(args)
 
-            if self.seismic:
-                axs[2,0].set_visible(False)
-                axs[2,1].set_ylabel('Seismic data')
-                axs[2,1].imshow(ys_obs,cmap='seismic',vmin=self.yslims[0],vmax=self.yslims[1])
-                ax = axs[2,2].imshow(dhat.mean(0),cmap='seismic',vmin=self.yslims[0],vmax=self.yslims[1])
-                add_cbar(2,2,ax,fig=fig, axs=axs)
-                
-                ax = axs[2,3].imshow(dhat.std(0),cmap='seismic',vmin=self.yslims[0],vmax=self.yslims[1])
-                
-                bbox= axs[2,3].get_position()
-                bbox.x0+=0.07; bbox.x1+=0.07
-                axs[2,3].set_position(bbox)
-                add_cbar(2,3,ax,fig=fig, axs=axs)
-        
-        elif self.seismic:
-            
-            axs[0,1].imshow(ys_obs, cmap='seismic', vmin=self.yslims[0], vmax=self.yslims[1])
-            
-            axs[1,1].set_title('Inferred data error (mean)')
-            ax = axs[1,1].imshow(e_hat, cmap='seismic', vmin=self.yslims[0], vmax=self.yslims[1])
-            bbox= axs[1,1].get_position()
-            bbox.x0-=0.02; bbox.x1-=0.02
-            axs[1,1].set_position(bbox)
-            add_cbar(1,1,ax,fig=fig, axs=axs)
-            
-            bbox= axs[0,1].get_position()
-            bbox.x0-=0.02; bbox.x1-=0.02
-            axs[0,1].set_position(bbox)
-            
-            bbox= axs[1,2].get_position()
-            bbox.x0+=0.01; bbox.x1+=0.01
-            axs[1,2].set_position(bbox)
-            
-            bbox= axs[0,2].get_position()
-            bbox.x0+=0.01; bbox.x1+=0.01
-            axs[0,2].set_position(bbox)
-            
-            ax = axs[1,2].imshow(self.realizations[:,1].mean(0),cmap='jet', 
-                                 vmin = self.ip[0], vmax = self.ip[1], 
-                                 interpolation='none')
-        add_cbar(1, 2, ax1, fig=fig, axs=axs)
-        
-        plt.savefig(self.save_dir+f'//Fac_Ip_summary_{text}.png',
-                    bbox_inches='tight')
-        plt.show()
-        
-        return None
+sys.path.append(args.net_dir+'/Code_backup') #torch.utils is necessary to load the model
+import os
+from dataset import FaciesSet
+
+# using training data to compute the error
+if args.error_x0=='prop':
+    dataset = FaciesSet(args.train_data_dir, args.image_size, args.image_depth)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=16, shuffle=True)
+    for i, data in enumerate(loader):
+        test_data = data[0]
+        del data
+        break
 
 
-for n_steps in [500]:
-  for error in ['prop']:
-    for noise_factor in [0.5,1,2,4]:
-      if n_steps == 32 and error=='dps': continue
-      else:
-        torch.cuda.empty_cache()
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--workdir", type=str, default= '//')
-        parser.add_argument("--save_dir", type=str, default= '//')
-        parser.add_argument("--train_data_dir", type=str, default= '/')
-        parser.add_argument("--test_models_dir", type=str, default= '/')
-        parser.add_argument("--net_dir", type=str, default= '/')
-        parser.add_argument("--net_snapfile", type=str, default= '/network-snapshot-001800.pkl') 
-        
-        parser.add_argument("--test_model_n", type=str, default='1')
-        parser.add_argument("--test_model_folder", type=str, default= 'Test_models_DGMs/')
-        parser.add_argument("--wavelet_file", type=str, default= 'wavelet.asc')
-        parser.add_argument("--image_size", type= int, default=[80,100])
-        parser.add_argument("--image_depth", type= int, default=2)
-        parser.add_argument("--sigma_max", type= int, default=80)
-        parser.add_argument("--rho", type= float, default=7,    
-                            help='determines the noise schedule, 1 is linear. 7 is the optimal exponential trend from Karras EDM paper')  
-        parser.add_argument("--device", type= str, default="cuda:3")       
-        
-        parser.add_argument("--num_steps", type= int, default= n_steps)
-        parser.add_argument("--n_samples", type= int, default= 100)
-        
-        parser.add_argument("--hard_data_error", default= [.1*noise_factor,.05*noise_factor], help='Sigma for [Facies, Ip], normalized between 0 and 1')
-        parser.add_argument("--hd_cond_where", default= [30, 50])
-        parser.add_argument("--relative_data_error", default= .05*noise_factor)
-        parser.add_argument("--absolute_data_error", default= 1*noise_factor)
-        parser.add_argument("--error_x0", default= error, 
-        help= 'dps / prop / actual_dps: 1) the way it is theoretically proposed / our correction / how it is implemented in their DDPM implementation')
-        
-        parser.add_argument("--seismic", type=bool, default=True)
-        parser.add_argument("--hard_data", type=bool, default=False)
-  
-        args = parser.parse_args()
-  
-        print(args)
-        
-        sys.path.append(args.net_dir+'/Code_backup') #torch.utils is necessary to load the model
-        import os
-        from dataset import FaciesSet
-        
-        # using training data to compute the error
-        if args.error_x0=='prop':
-            dataset = FaciesSet(args.train_data_dir, args.image_size, args.image_depth)
-            loader = torch.utils.data.DataLoader(dataset, batch_size=16, shuffle=True)
-            for i, data in enumerate(loader):
-                test_data = data[0]
-                del data
-                break
-        
-        
-        os.makedirs(args.save_dir, exist_ok=True)
-        
-        DPS = DPS_Inversion(args)
-        if args.error_x0=='prop': 
-            print('Error estimation per timestep')
-            DPS.compute_estimation_error(test_data.to(args.device))
-        
-        DPS.invert()
-                    
-        try:
-            exists = DPS.realizations
-        except:
-            DPS.realizations = torch.load(args.save_dir+'/reals.pt', weights_only=True)
-            DPS.wrmse_s = torch.load(args.save_dir+'/wrmse_s.pt', weights_only=True)
-            DPS.wrmse_h = torch.load(args.save_dir+'/wrmse_h.pt', weights_only=True)
-        
-        DPS.results_analysis()
+os.makedirs(args.save_dir, exist_ok=True)
+
+DPS = DPS_Inversion(args)
+if args.error_x0=='prop': 
+    print('Error estimation per timestep')
+    DPS.compute_estimation_error(test_data.to(args.device))
+
+DPS.invert()
+            
+try:
+    exists = DPS.realizations
+except:
+    DPS.realizations = torch.load(args.save_dir+'/reals.pt', weights_only=True)
+    DPS.wrmse_s = torch.load(args.save_dir+'/wrmse_s.pt', weights_only=True)
+    DPS.wrmse_h = torch.load(args.save_dir+'/wrmse_h.pt', weights_only=True)
+
+DPS.results_analysis()
             
